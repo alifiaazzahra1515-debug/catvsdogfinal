@@ -2,5 +2,4 @@ streamlit
 tensorflow
 numpy
 pillow
-plotly
-huggingface_hub
+requests
