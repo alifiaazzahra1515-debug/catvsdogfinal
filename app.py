@@ -97,14 +97,20 @@ def predict_image(image: Image.Image):
     img_resized = image.resize((input_width, input_height))
     img_array = np.expand_dims(np.array(img_resized) / 255.0, axis=0)
     preds = model.predict(img_array, verbose=0)
-    if isinstance(preds, (list, tuple)):
-        preds = preds[0]
 
-    pred_idx = np.argmax(preds, axis=1)[0]
-    confidence = float(np.max(preds) * 100)
-    label = idx_to_class.get(pred_idx, str(pred_idx)) if idx_to_class else str(pred_idx)
-    label = f"{emoji_map.get(label, '')} {label}"
-    return label, confidence, preds[0]
+    # Ambil probabilitas (1D array)
+    probs = preds[0]
+
+    pred_idx = int(np.argmax(probs))
+    confidence = float(np.max(probs) * 100)
+
+    if idx_to_class:
+        label_name = idx_to_class.get(pred_idx, str(pred_idx))
+    else:
+        label_name = str(pred_idx)
+
+    label = f"{emoji_map.get(label_name, '')} {label_name}"
+    return label, confidence, probs
 
 # -----------------------------
 # SIDEBAR
