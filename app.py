@@ -2,7 +2,6 @@ import streamlit as st
 import tensorflow as tf
 import numpy as np
 import json
-import os
 from PIL import Image
 from tensorflow.keras.models import load_model
 import plotly.graph_objects as go
@@ -18,15 +17,14 @@ st.set_page_config(
 )
 
 # -----------------------------
-# DOWNLOAD MODEL & CLASS FILE
+# LOAD MODEL & CLASS INDICES
 # -----------------------------
 @st.cache_resource
 def load_cnn_model():
     try:
-        # download model dari HuggingFace
         model_path = hf_hub_download(
             repo_id="alifia1/catdog1",   # ganti dengan repo kamu
-            filename="model_mobilenetv2.h5"
+            filename="mobilenetv2_single_input.h5"
         )
         model = load_model(model_path, compile=False)
     except Exception as e:
@@ -36,19 +34,17 @@ def load_cnn_model():
 
 model = load_cnn_model()
 
-# ambil ukuran input otomatis
 try:
     input_height, input_width = model.input_shape[1:3]
 except:
     st.error("Tidak bisa membaca input_shape dari model.")
     st.stop()
 
-# ambil class_indices dari repo HF (kalau ada)
 @st.cache_resource
 def load_classes():
     try:
         class_path = hf_hub_download(
-            repo_id="alifia1/catdog1",  # repo sama
+            repo_id="alifia1/catdog1",
             filename="class_indices.json"
         )
         with open(class_path, "r") as f:
@@ -59,45 +55,7 @@ def load_classes():
         return None
 
 idx_to_class = load_classes()
-
 emoji_map = {"Cat": "🐱", "Dog": "🐶"}
-
-# -----------------------------
-# INFO SECTIONS
-# -----------------------------
-st.markdown("## 🟦 1. About")
-st.write("""
-Hi all, welcome to this project 👋  
-This is a **Cat or Dog Recognizer App** built using **MobileNetV2 CNN** and **Streamlit**. 🐱🐶
-
-👉 Tujuan aplikasi ini adalah untuk mengklasifikasi gambar **kucing** atau **anjing** secara otomatis.  
-Dengan antarmuka sederhana, siapapun bisa menggunakannya tanpa perlu paham machine learning.
-""")
-
-st.markdown("## 🟦 2. How To Use It")
-st.write("""
-Menggunakan aplikasi ini sangat mudah:  
-
-1. 📥 **Upload gambar** kucing 🐱 atau anjing 🐶 (format JPG/PNG).  
-2. 🖱️ Bisa klik *Browse files* atau **drag & drop** ke kotak upload.  
-3. ✅ Pastikan file benar-benar **gambar**, bukan dokumen lain.  
-4. 🔎 Tunggu sebentar → model akan memproses dan menampilkan hasil.  
-5. 📊 Hasil prediksi dilengkapi dengan **confidence score** dan **visualisasi probabilitas**.  
-
-**NOTE:** Kalau upload file bukan gambar, aplikasi akan menampilkan pesan error 🚫.
-""")
-
-st.markdown("## 🟦 3. What It Will Predict")
-st.write("""
-Model ini akan memprediksi apakah gambar yang kamu upload adalah:  
-
-- 🐱 **Cat**  
-- 🐶 **Dog**
-
-Selain label prediksi, aplikasi juga menampilkan:  
-- Persentase **confidence** (keyakinan model).  
-- Grafik probabilitas tiap kelas untuk transparansi hasil prediksi.  
-""")
 
 # -----------------------------
 # PREDICT FUNCTION
@@ -116,69 +74,39 @@ def predict_image(image: Image.Image):
     return label, confidence, preds[0]
 
 # -----------------------------
-# SIDEBAR
+# UI
 # -----------------------------
-st.sidebar.title("⚙️ Pengaturan")
-mode = st.sidebar.radio("Mode Prediksi", ["Single Upload", "Batch Upload"])
-st.sidebar.markdown("---")
-st.sidebar.write("📐 Input shape model:", model.input_shape)
+st.title("🐱🐶 Cat vs Dog Classifier")
+st.markdown("Upload gambar kucing atau anjing → model MobileNetV2 akan memprediksi!")
 
-# -----------------------------
-# MAIN APP
-# -----------------------------
-st.markdown("## 🟦 4. Try It Out")
+uploaded = st.file_uploader("Upload gambar", type=["jpg", "jpeg", "png"])
 
-if mode == "Single Upload":
-    uploaded = st.file_uploader("Tarik & lepas gambar di sini", type=["jpg", "jpeg", "png"])
+if uploaded:
+    img = Image.open(uploaded).convert("RGB")
+    st.image(img, caption="Gambar terupload", use_column_width=True)
 
-    if uploaded:
-        img = Image.open(uploaded).convert("RGB")
-        st.image(img, caption="Gambar terupload", use_column_width=True)
+    with st.spinner("🔎 Sedang memproses..."):
+        label, conf, probs = predict_image(img)
 
-        with st.spinner("🔎 Sedang memproses..."):
-            label, conf, probs = predict_image(img)
+    st.success(f"Prediksi: **{label}** ({conf:.2f}%)")
 
-        st.success(f"Prediksi: **{label}** ({conf:.2f}%)")
-
-        # Bar chart probabilitas
-        labels = [idx_to_class.get(i, str(i)) for i in range(len(probs))]
-        emojis = [emoji_map.get(lbl, "") for lbl in labels]
-        fig = go.Figure([go.Bar(
-            x=[f"{e} {lbl}" for e, lbl in zip(emojis, labels)],
-            y=probs,
-            marker_color=["#1f77b4", "#ff7f0e"]
-        )])
-        fig.update_layout(
-            title_text="Probabilitas Tiap Kelas",
-            xaxis_title="Kelas",
-            yaxis_title="Probabilitas",
-            template="plotly_white"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Silakan upload gambar terlebih dahulu.")
-
-else:  # Batch Upload
-    uploaded_files = st.file_uploader(
-        "Upload beberapa gambar sekaligus",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True
+    # Probabilitas chart
+    labels = [idx_to_class.get(i, str(i)) for i in range(len(probs))]
+    emojis = [emoji_map.get(lbl, "") for lbl in labels]
+    fig = go.Figure([go.Bar(
+        x=[f"{e} {lbl}" for e, lbl in zip(emojis, labels)],
+        y=probs,
+        marker_color=["#1f77b4", "#ff7f0e"]
+    )])
+    fig.update_layout(
+        title_text="Probabilitas Tiap Kelas",
+        xaxis_title="Kelas",
+        yaxis_title="Probabilitas",
+        template="plotly_white"
     )
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Silakan upload gambar terlebih dahulu.")
 
-    if uploaded_files:
-        cols = st.columns(2)
-        for i, file in enumerate(uploaded_files):
-            img = Image.open(file).convert("RGB")
-            label, conf, _ = predict_image(img)
-            with cols[i % 2]:
-                st.image(img, caption=f"{file.name}", use_column_width=True)
-                st.write(f"➡️ **{label}** ({conf:.2f}%)")
-                st.progress(int(conf))
-    else:
-        st.info("Silakan upload beberapa gambar untuk batch prediksi.")
-
-# -----------------------------
-# FOOTER
-# -----------------------------
 st.markdown("---")
-st.markdown("✨ Dibuat dengan ❤️ menggunakan Streamlit & TensorFlow • UI modern, informatif & interaktif 🐱🐶")
+st.markdown("✨ Dibuat dengan ❤️ menggunakan Streamlit & TensorFlow • Model dihosting di Hugging Face Hub 🐱🐶")
