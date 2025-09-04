@@ -1,112 +1,63 @@
-import streamlit as st
-import tensorflow as tf
-import numpy as np
+import os
 import json
+import numpy as np
+import streamlit as st
 from PIL import Image
 from tensorflow.keras.models import load_model
-import plotly.graph_objects as go
-from huggingface_hub import hf_hub_download
+from tensorflow.keras.preprocessing import image
+import requests
 
-# -----------------------------
-# CONFIG
-# -----------------------------
-st.set_page_config(
-    page_title="🐱🐶 Cat vs Dog Classifier",
-    page_icon="🐾",
-    layout="centered",
-)
+MODEL_URL = "https://huggingface.co/alifia1/catvsdog/resolve/main/model_mobilenetv2.keras"
+CLASS_URL = "https://huggingface.co/alifia1/catvsdog/resolve/main/class_indices.json"
+MODEL_PATH = "model_mobilenetv2.keras"
+CLASS_PATH = "class_indices.json"
 
-# -----------------------------
-# LOAD MODEL & CLASS INDICES
-# -----------------------------
+# Download file jika belum ada
+def download_file(url, filename):
+    if not os.path.exists(filename):
+        with st.spinner(f"Downloading {filename} ..."):
+            r = requests.get(url)
+            with open(filename, "wb") as f:
+                f.write(r.content)
+
+download_file(MODEL_URL, MODEL_PATH)
+download_file(CLASS_URL, CLASS_PATH)
+
+# Load model (cache supaya tidak reload tiap kali)
 @st.cache_resource
-def load_cnn_model():
-    try:
-        model_path = hf_hub_download(
-            repo_id="alifia1/catdog1",   # ganti dengan repo kamu
-            filename="mobilenetv2_single_input.h5"
-        )
-        model = load_model(model_path, compile=False)
-    except Exception as e:
-        st.error(f"Gagal load model: {e}")
-        st.stop()
-    return model
+def load_my_model():
+    return load_model(MODEL_PATH)
 
-model = load_cnn_model()
+model = load_my_model()
 
-try:
-    input_height, input_width = model.input_shape[1:3]
-except:
-    st.error("Tidak bisa membaca input_shape dari model.")
-    st.stop()
+# Load class indices
+with open(CLASS_PATH, "r") as f:
+    class_indices = json.load(f)
+idx_to_class = {v: k for k, v in class_indices.items()}
 
-@st.cache_resource
-def load_classes():
-    try:
-        class_path = hf_hub_download(
-            repo_id="alifia1/catdog1",
-            filename="class_indices.json"
-        )
-        with open(class_path, "r") as f:
-            class_indices = json.load(f)
-        return {v: k for k, v in class_indices.items()}
-    except:
-        st.warning("⚠️ class_indices.json tidak ditemukan, kelas tampil sebagai nomor.")
-        return None
+def prepare_image(img, target_size=(224, 224)):
+    img = img.resize(target_size)
+    img_array = image.img_to_array(img)
+    img_array = np.expand_dims(img_array, axis=0)
+    img_array = img_array / 255.0
+    return img_array
 
-idx_to_class = load_classes()
-emoji_map = {"Cat": "🐱", "Dog": "🐶"}
-
-# -----------------------------
-# PREDICT FUNCTION
-# -----------------------------
-def predict_image(image: Image.Image):
-    img_resized = image.resize((input_width, input_height))
-    img_array = np.expand_dims(np.array(img_resized) / 255.0, axis=0)
-    preds = model.predict(img_array, verbose=0)
-    if isinstance(preds, (list, tuple)):
-        preds = preds[0]
-
-    pred_idx = np.argmax(preds, axis=1)[0]
-    confidence = float(np.max(preds) * 100)
-    label = idx_to_class.get(pred_idx, str(pred_idx)) if idx_to_class else str(pred_idx)
-    label = f"{emoji_map.get(label, '')} {label}"
-    return label, confidence, preds[0]
-
-# -----------------------------
-# UI
-# -----------------------------
+# Streamlit UI
 st.title("🐱🐶 Cat vs Dog Classifier")
-st.markdown("Upload gambar kucing atau anjing → model MobileNetV2 akan memprediksi!")
+st.write("Upload gambar kucing atau anjing untuk diprediksi.")
 
-uploaded = st.file_uploader("Upload gambar", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"])
 
-if uploaded:
-    img = Image.open(uploaded).convert("RGB")
-    st.image(img, caption="Gambar terupload", use_column_width=True)
+if uploaded_file is not None:
+    img = Image.open(uploaded_file).convert("RGB")
+    st.image(img, caption="Uploaded Image", use_column_width=True)
 
-    with st.spinner("🔎 Sedang memproses..."):
-        label, conf, probs = predict_image(img)
+    img_array = prepare_image(img)
+    preds = model.predict(img_array)
+    class_idx = np.argmax(preds, axis=1)[0]
+    label = idx_to_class[class_idx]
+    confidence = float(np.max(preds))
 
-    st.success(f"Prediksi: **{label}** ({conf:.2f}%)")
-
-    # Probabilitas chart
-    labels = [idx_to_class.get(i, str(i)) for i in range(len(probs))]
-    emojis = [emoji_map.get(lbl, "") for lbl in labels]
-    fig = go.Figure([go.Bar(
-        x=[f"{e} {lbl}" for e, lbl in zip(emojis, labels)],
-        y=probs,
-        marker_color=["#1f77b4", "#ff7f0e"]
-    )])
-    fig.update_layout(
-        title_text="Probabilitas Tiap Kelas",
-        xaxis_title="Kelas",
-        yaxis_title="Probabilitas",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-else:
-    st.info("Silakan upload gambar terlebih dahulu.")
-
-st.markdown("---")
-st.markdown("✨ Dibuat dengan ❤️ menggunakan Streamlit & TensorFlow • Model dihosting di Hugging Face Hub 🐱🐶")
+    st.subheader("Prediction Result")
+    st.success(f"**Class:** {label}")
+    st.write(f"**Confidence:** {confidence:.2f}")
