@@ -6,6 +6,7 @@ import gdown
 import os
 import re
 from PIL import Image
+from tensorflow.keras.models import Model
 
 # -----------------------------
 # CONFIG
@@ -19,7 +20,7 @@ st.set_page_config(
 MODEL_PATH = "model_mobilenetv2.h5"
 CLASS_PATH = "class_indices.json"
 
-# Link Google Drive model
+# URL Google Drive model
 GDRIVE_URL = "https://drive.google.com/file/d/1t93ewP27enLqsQcyFUje4ncYpi6VxZ6A/view?usp=drive_link"
 
 # -----------------------------
@@ -49,40 +50,40 @@ if not os.path.exists(MODEL_PATH):
 # -----------------------------
 @st.cache_resource
 def load_model():
-    # compile=False untuk menghindari error custom objects
-    model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+    try:
+        base_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
+
+        # ⚡ force sub-model → hanya pakai input[0] ke output terakhir
+        if isinstance(base_model.inputs, (list, tuple)) and len(base_model.inputs) > 1:
+            st.warning("Model punya >1 input, hanya input pertama yang dipakai.")
+            model = Model(inputs=base_model.inputs[0], outputs=base_model.outputs)
+        else:
+            model = base_model
+    except Exception as e:
+        st.error(f"Gagal load model: {e}")
+        st.stop()
     return model
 
 model = load_model()
 
-# Load class indices
+# -----------------------------
+# LOAD CLASS INDICES
+# -----------------------------
 with open(CLASS_PATH, "r") as f:
     class_indices = json.load(f)
 
 idx_to_class = {v: k for k, v in class_indices.items()}
 
-# Debug info
-st.sidebar.subheader("🔍 Info Model")
-st.sidebar.write("Inputs:", model.inputs)
-st.sidebar.write("Outputs:", model.outputs)
-
 # -----------------------------
-# PREDICT FUNCTION (auto-handle)
+# PREDICT FUNCTION
 # -----------------------------
 def predict_image(image: Image.Image):
     img_resized = image.resize((224, 224))
     img_array = np.array(img_resized) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
 
-    # Jika model punya >1 input → duplikasikan
-    if isinstance(model.inputs, (list, tuple)) and len(model.inputs) > 1:
-        model_input = [img_array for _ in range(len(model.inputs))]
-    else:
-        model_input = img_array
+    preds = model.predict(img_array, verbose=0)
 
-    preds = model.predict(model_input, verbose=0)
-
-    # Kalau model punya >1 output, ambil output pertama untuk klasifikasi
     if isinstance(preds, (list, tuple)):
         preds = preds[0]
 
@@ -125,6 +126,6 @@ st.markdown("---")
 st.markdown(
     """
     ✨ Dibuat dengan ❤️ menggunakan Streamlit & TensorFlow  
-    Aplikasi ini otomatis handle multi-input/output model.
+    (Versi anti-error: hanya pakai input pertama model)
     """
 )
