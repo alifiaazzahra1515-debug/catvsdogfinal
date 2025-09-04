@@ -6,6 +6,7 @@ import os
 from PIL import Image
 from tensorflow.keras.models import load_model
 import plotly.graph_objects as go
+from huggingface_hub import hf_hub_download
 
 # -----------------------------
 # CONFIG
@@ -16,16 +17,18 @@ st.set_page_config(
     layout="centered",
 )
 
-MODEL_PATH = "best_cnn_model.h5"
-CLASS_PATH = "class_indices.json"
-
 # -----------------------------
-# LOAD MODEL
+# DOWNLOAD MODEL & CLASS FILE
 # -----------------------------
 @st.cache_resource
 def load_cnn_model():
     try:
-        model = load_model(MODEL_PATH, compile=False)
+        # download model dari HuggingFace
+        model_path = hf_hub_download(
+            repo_id="alifia1/catdog1",   # ganti dengan repo kamu
+            filename="model_mobilenetv2.h5"
+        )
+        model = load_model(model_path, compile=False)
     except Exception as e:
         st.error(f"Gagal load model: {e}")
         st.stop()
@@ -33,23 +36,29 @@ def load_cnn_model():
 
 model = load_cnn_model()
 
-# Ambil ukuran input otomatis
+# ambil ukuran input otomatis
 try:
     input_height, input_width = model.input_shape[1:3]
 except:
     st.error("Tidak bisa membaca input_shape dari model.")
     st.stop()
 
-# -----------------------------
-# LOAD CLASS INDICES
-# -----------------------------
-if os.path.exists(CLASS_PATH):
-    with open(CLASS_PATH, "r") as f:
-        class_indices = json.load(f)
-    idx_to_class = {v: k for k, v in class_indices.items()}
-else:
-    st.warning("⚠️ class_indices.json tidak ditemukan, kelas tampil sebagai nomor.")
-    idx_to_class = None
+# ambil class_indices dari repo HF (kalau ada)
+@st.cache_resource
+def load_classes():
+    try:
+        class_path = hf_hub_download(
+            repo_id="alifia1/catdog1",  # repo sama
+            filename="class_indices.json"
+        )
+        with open(class_path, "r") as f:
+            class_indices = json.load(f)
+        return {v: k for k, v in class_indices.items()}
+    except:
+        st.warning("⚠️ class_indices.json tidak ditemukan, kelas tampil sebagai nomor.")
+        return None
+
+idx_to_class = load_classes()
 
 emoji_map = {"Cat": "🐱", "Dog": "🐶"}
 
@@ -59,7 +68,7 @@ emoji_map = {"Cat": "🐱", "Dog": "🐶"}
 st.markdown("## 🟦 1. About")
 st.write("""
 Hi all, welcome to this project 👋  
-This is a **Cat or Dog Recognizer App** built using **Convolutional Neural Networks (CNN)** and **Streamlit**. 🐱🐶
+This is a **Cat or Dog Recognizer App** built using **MobileNetV2 CNN** and **Streamlit**. 🐱🐶
 
 👉 Tujuan aplikasi ini adalah untuk mengklasifikasi gambar **kucing** atau **anjing** secara otomatis.  
 Dengan antarmuka sederhana, siapapun bisa menggunakannya tanpa perlu paham machine learning.
