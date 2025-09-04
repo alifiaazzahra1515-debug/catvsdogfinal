@@ -17,7 +17,7 @@ st.set_page_config(
     layout="centered",
 )
 
-# Langsung paste link share dari Google Drive (format "Anyone with the link")
+# Link Google Drive (format direct download: uc?id=...)
 GDRIVE_URL = "https://drive.google.com/uc?id=1t93ewP27enLqsQcyFUje4ncYpi6VxZ6A"
 MODEL_PATH = "my_tl_model.h5"
 CLASS_PATH = "class_indices.json"
@@ -38,7 +38,8 @@ download_from_gdrive(GDRIVE_URL, MODEL_PATH)
 @st.cache_resource
 def load_cnn_model():
     try:
-        model = load_model(MODEL_PATH, compile=False)
+        # pakai safe_mode=False agar bisa load model bermasalah
+        model = load_model(MODEL_PATH, compile=False, safe_mode=False)
     except Exception as e:
         st.error(f"Gagal load model: {e}")
         st.stop()
