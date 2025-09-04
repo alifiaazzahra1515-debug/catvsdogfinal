@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # Langsung paste link share dari Google Drive (format "Anyone with the link")
-GDRIVE_URL = "https://drive.google.com/file/d/1xWeBGY2lIAmxG3mqdc7Gn7sjULTAeGK8/view?usp=sharing"
+GDRIVE_URL = "https://drive.google.com/uc?id=1t93ewP27enLqsQcyFUje4ncYpi6VxZ6A"
 MODEL_PATH = "my_tl_model.h5"
 CLASS_PATH = "class_indices.json"
 
