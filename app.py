@@ -1,48 +1,175 @@
 import streamlit as st
+import tensorflow as tf
 import numpy as np
-from PIL import Image
-import gdown
+import json
 import os
+from PIL import Image
 from tensorflow.keras.models import load_model
-from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+import plotly.graph_objects as go
 
-# ======================================================
-# Konfigurasi
-# ======================================================
-MODEL_URL = "https://huggingface.co/alifia1/catdog1/resolve/main/model_mobilenetv2.h5"
-MODEL_PATH = "model_mobilenetv2.h5"
+# -----------------------------
+# CONFIG
+# -----------------------------
+st.set_page_config(
+    page_title="🐱🐶 Cat vs Dog Classifier",
+    page_icon="🐾",
+    layout="centered",
+)
 
-# Download model dari Hugging Face jika belum ada
-if not os.path.exists(MODEL_PATH):
-    gdown.download(MODEL_URL, MODEL_PATH, quiet=False)
+MODEL_PATH = "best_cnn_model.h5"
+CLASS_PATH = "class_indices.json"
 
-# Load model
-model = load_model(MODEL_PATH)
+# -----------------------------
+# LOAD MODEL
+# -----------------------------
+@st.cache_resource
+def load_cnn_model():
+    try:
+        model = load_model(MODEL_PATH, compile=False)
+    except Exception as e:
+        st.error(f"Gagal load model: {e}")
+        st.stop()
+    return model
 
-# ======================================================
-# Streamlit UI
-# ======================================================
-st.set_page_config(page_title="Cat vs Dog Classifier", layout="centered")
-st.title("🐱 vs 🐶 Cat & Dog Image Classifier")
-st.write("Upload gambar kucing atau anjing, dan model akan memprediksi kelasnya.")
+model = load_cnn_model()
 
-uploaded_file = st.file_uploader("Choose an image...", type=["jpg","jpeg","png"])
+# Ambil ukuran input otomatis
+try:
+    input_height, input_width = model.input_shape[1:3]
+except:
+    st.error("Tidak bisa membaca input_shape dari model.")
+    st.stop()
 
-if uploaded_file is not None:
-    # Load image
-    image = Image.open(uploaded_file).convert('RGB')
-    st.image(image, caption='Uploaded Image', use_column_width=True)
-    
-    # Preprocess image
-    img_resized = image.resize((224,224))
-    img_array = np.array(img_resized)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array = preprocess_input(img_array)  # sesuai MobileNetV2
+# -----------------------------
+# LOAD CLASS INDICES
+# -----------------------------
+if os.path.exists(CLASS_PATH):
+    with open(CLASS_PATH, "r") as f:
+        class_indices = json.load(f)
+    idx_to_class = {v: k for k, v in class_indices.items()}
+else:
+    st.warning("⚠️ class_indices.json tidak ditemukan, kelas tampil sebagai nomor.")
+    idx_to_class = None
 
-    # Predict
-    preds = model.predict(img_array)
-    class_idx = np.argmax(preds, axis=1)[0]
-    classes = ['Cat', 'Dog']
-    confidence = preds[0][class_idx]*100
+emoji_map = {"Cat": "🐱", "Dog": "🐶"}
 
-    st.success(f"Predicted: **{classes[class_idx]}** with confidence {confidence:.2f}%")
+# -----------------------------
+# INFO SECTIONS
+# -----------------------------
+st.markdown("## 🟦 1. About")
+st.write("""
+Hi all, welcome to this project 👋  
+This is a **Cat or Dog Recognizer App** built using **Convolutional Neural Networks (CNN)** and **Streamlit**. 🐱🐶
+
+👉 Tujuan aplikasi ini adalah untuk mengklasifikasi gambar **kucing** atau **anjing** secara otomatis.  
+Dengan antarmuka sederhana, siapapun bisa menggunakannya tanpa perlu paham machine learning.
+""")
+
+st.markdown("## 🟦 2. How To Use It")
+st.write("""
+Menggunakan aplikasi ini sangat mudah:  
+
+1. 📥 **Upload gambar** kucing 🐱 atau anjing 🐶 (format JPG/PNG).  
+2. 🖱️ Bisa klik *Browse files* atau **drag & drop** ke kotak upload.  
+3. ✅ Pastikan file benar-benar **gambar**, bukan dokumen lain.  
+4. 🔎 Tunggu sebentar → model akan memproses dan menampilkan hasil.  
+5. 📊 Hasil prediksi dilengkapi dengan **confidence score** dan **visualisasi probabilitas**.  
+
+**NOTE:** Kalau upload file bukan gambar, aplikasi akan menampilkan pesan error 🚫.
+""")
+
+st.markdown("## 🟦 3. What It Will Predict")
+st.write("""
+Model ini akan memprediksi apakah gambar yang kamu upload adalah:  
+
+- 🐱 **Cat**  
+- 🐶 **Dog**
+
+Selain label prediksi, aplikasi juga menampilkan:  
+- Persentase **confidence** (keyakinan model).  
+- Grafik probabilitas tiap kelas untuk transparansi hasil prediksi.  
+""")
+
+# -----------------------------
+# PREDICT FUNCTION
+# -----------------------------
+def predict_image(image: Image.Image):
+    img_resized = image.resize((input_width, input_height))
+    img_array = np.expand_dims(np.array(img_resized) / 255.0, axis=0)
+    preds = model.predict(img_array, verbose=0)
+    if isinstance(preds, (list, tuple)):
+        preds = preds[0]
+
+    pred_idx = np.argmax(preds, axis=1)[0]
+    confidence = float(np.max(preds) * 100)
+    label = idx_to_class.get(pred_idx, str(pred_idx)) if idx_to_class else str(pred_idx)
+    label = f"{emoji_map.get(label, '')} {label}"
+    return label, confidence, preds[0]
+
+# -----------------------------
+# SIDEBAR
+# -----------------------------
+st.sidebar.title("⚙️ Pengaturan")
+mode = st.sidebar.radio("Mode Prediksi", ["Single Upload", "Batch Upload"])
+st.sidebar.markdown("---")
+st.sidebar.write("📐 Input shape model:", model.input_shape)
+
+# -----------------------------
+# MAIN APP
+# -----------------------------
+st.markdown("## 🟦 4. Try It Out")
+
+if mode == "Single Upload":
+    uploaded = st.file_uploader("Tarik & lepas gambar di sini", type=["jpg", "jpeg", "png"])
+
+    if uploaded:
+        img = Image.open(uploaded).convert("RGB")
+        st.image(img, caption="Gambar terupload", use_column_width=True)
+
+        with st.spinner("🔎 Sedang memproses..."):
+            label, conf, probs = predict_image(img)
+
+        st.success(f"Prediksi: **{label}** ({conf:.2f}%)")
+
+        # Bar chart probabilitas
+        labels = [idx_to_class.get(i, str(i)) for i in range(len(probs))]
+        emojis = [emoji_map.get(lbl, "") for lbl in labels]
+        fig = go.Figure([go.Bar(
+            x=[f"{e} {lbl}" for e, lbl in zip(emojis, labels)],
+            y=probs,
+            marker_color=["#1f77b4", "#ff7f0e"]
+        )])
+        fig.update_layout(
+            title_text="Probabilitas Tiap Kelas",
+            xaxis_title="Kelas",
+            yaxis_title="Probabilitas",
+            template="plotly_white"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Silakan upload gambar terlebih dahulu.")
+
+else:  # Batch Upload
+    uploaded_files = st.file_uploader(
+        "Upload beberapa gambar sekaligus",
+        type=["jpg", "jpeg", "png"],
+        accept_multiple_files=True
+    )
+
+    if uploaded_files:
+        cols = st.columns(2)
+        for i, file in enumerate(uploaded_files):
+            img = Image.open(file).convert("RGB")
+            label, conf, _ = predict_image(img)
+            with cols[i % 2]:
+                st.image(img, caption=f"{file.name}", use_column_width=True)
+                st.write(f"➡️ **{label}** ({conf:.2f}%)")
+                st.progress(int(conf))
+    else:
+        st.info("Silakan upload beberapa gambar untuk batch prediksi.")
+
+# -----------------------------
+# FOOTER
+# -----------------------------
+st.markdown("---")
+st.markdown("✨ Dibuat dengan ❤️ menggunakan Streamlit & TensorFlow • UI modern, informatif & interaktif 🐱🐶")
