@@ -10,13 +10,13 @@ from tensorflow.keras.models import load_model
 # CONFIG
 # -----------------------------
 st.set_page_config(
-    page_title="Image Classifier",
-    page_icon="🖼️",
+    page_title="🐱🐶 Cat vs Dog Classifier",
+    page_icon="🐾",
     layout="wide",
 )
 
 MODEL_PATH = "best_cnn_model.h5"
-CLASS_PATH = "class_indices.json"  # harus ada file json mapping kelas
+CLASS_PATH = "class_indices.json"  # file mapping kelas (misal: {"Cat":0,"Dog":1})
 
 # -----------------------------
 # LOAD MODEL
@@ -32,6 +32,13 @@ def load_cnn_model():
 
 model = load_cnn_model()
 
+# Ambil ukuran input otomatis
+try:
+    input_height, input_width = model.input_shape[1:3]
+except Exception:
+    st.error("Tidak bisa membaca input_shape dari model.")
+    st.stop()
+
 # -----------------------------
 # LOAD CLASS INDICES
 # -----------------------------
@@ -44,10 +51,18 @@ else:
     idx_to_class = None
 
 # -----------------------------
+# EMOTICON MAP
+# -----------------------------
+emoji_map = {
+    "Cat": "🐱",
+    "Dog": "🐶"
+}
+
+# -----------------------------
 # PREDICT FUNCTION
 # -----------------------------
 def predict_image(image: Image.Image):
-    img_resized = image.resize((224, 224))  # ukuran default CNN kamu
+    img_resized = image.resize((input_width, input_height))
     img_array = np.array(img_resized) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
 
@@ -61,10 +76,12 @@ def predict_image(image: Image.Image):
 
     if idx_to_class:
         label = idx_to_class[predicted_class]
+        label_with_emoji = f"{emoji_map.get(label, '')} {label}"
     else:
         label = str(predicted_class)
+        label_with_emoji = label
 
-    return label, confidence, preds[0]
+    return label_with_emoji, confidence, preds[0]
 
 # -----------------------------
 # SIDEBAR
@@ -72,11 +89,14 @@ def predict_image(image: Image.Image):
 st.sidebar.title("⚙️ Pengaturan")
 mode = st.sidebar.radio("Mode Prediksi", ["Single Upload", "Batch Upload"])
 
+st.sidebar.markdown("---")
+st.sidebar.write("📐 Input shape model:", model.input_shape)
+
 # -----------------------------
 # MAIN UI
 # -----------------------------
-st.title("🖼️ Image Classifier with CNN")
-st.write("Upload gambar, lalu model CNN akan memprediksi kelasnya.")
+st.title("🐱🐶 Cat vs Dog Classifier")
+st.write("Upload gambar kucing atau anjing, lalu model CNN akan memprediksi kelasnya.")
 
 # -----------------------------
 # SINGLE UPLOAD
@@ -102,7 +122,8 @@ if mode == "Single Upload":
         prob_dict = {}
         for i in range(len(preds)):
             if idx_to_class:
-                prob_dict[idx_to_class[i]] = float(preds[i])
+                class_label = idx_to_class[i]
+                prob_dict[f"{emoji_map.get(class_label, '')} {class_label}"] = float(preds[i])
             else:
                 prob_dict[str(i)] = float(preds[i])
         st.json(prob_dict)
@@ -139,6 +160,6 @@ st.markdown("---")
 st.markdown(
     """
     ✨ Dibuat dengan ❤️ menggunakan Streamlit & TensorFlow  
-    Mode: **Single/Batch Upload** | Antarmuka modern & mudah digunakan
+    Mode: **Single/Batch Upload** | Antarmuka modern dengan emoticon 🐶🐱
     """
 )
